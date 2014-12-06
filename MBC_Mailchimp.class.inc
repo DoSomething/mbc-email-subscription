@@ -1,13 +1,12 @@
 <?php
 
 use DoSomething\MBStatTracker\StatHat;
-use Drewm\MailChimp;
 
 /**
  * MBC_Mailchimp class - functionality related to the Message Broker use of the
  * Mailchimp service.
  */
-class MBC_Mailchimp_Toolbox
+class MBC_MailChimp
 {
 
   /**
@@ -72,8 +71,6 @@ class MBC_Mailchimp_Toolbox
     $connection = $this->messageBroker->connection;
     $this->channel = $connection->channel();
 
-    $this->mailChimp = new MailChimp($this->settings['mailchimp_apikey']);
-
     $this->statHat = new StatHat($settings['stathat_ez_key'], 'mbc-mailchimp-toolbox:');
     $this->statHat->setIsProduction(FALSE);
   }
@@ -84,16 +81,66 @@ class MBC_Mailchimp_Toolbox
    * @param string $payload
    *   The contents of the message in a serial format
    */
-  public function consumeQueue($payload) {
+  public function consumeMailchimpSubscriptionQueue() {
     echo '------- mbc-mailchimp-subscription->consumeQueue() START: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
 
-    $message = unserialize($payload->body);
-    
-    
 $bla = FALSE;
 if ($bla) {
   $bla = TRUE;
 }
+
+   // Get the status details of the queue by requesting a declare
+    list($this->channel, $status) = $this->messageBroker->setupQueue($this->config->topicEmailService->queues->mailchimpSubscriptionQueue->name, $this->channel);
+
+    $messageCount = $status[1];
+    $unackedCount = $status[2];
+
+    $messageDetails = '';
+    $newSubscribers = array();
+    $processedCount = 0;
+
+    while ($messageCount > 0 && $processedCount < self::BATCH_SIZE) {
+      $messageDetails = $this->channel->basic_get($this->config->topicEmailService->queues->mailchimpSubscriptionQueue->name);
+      $messagePayload = unserialize($messageDetails->body);
+      $newSubscribers[$processedCount] = array(
+        'email' => $messagePayload['email'],
+        'mb_delivery_tag' => $messageDetails->delivery_info['delivery_tag'],
+      );
+      if (isset($messagePayload['merge_vars']['FNAME'])) {
+        $newSubscribers[$processedCount]['fname'] = $messagePayload['merge_vars']['FNAME'];
+      }
+      if (isset($messagePayload['uid'])) {
+        $newSubscribers[$processedCount]['uid'] = $messagePayload['uid'];
+      }
+      if (isset($messagePayload['birthdate_timestamp'])) {
+        $newSubscribers[$processedCount]['birthdate_timestamp'] = $messagePayload['birthdate_timestamp'];
+      }
+      elseif (isset($messagePayload['birthdate'])) {
+        $newSubscribers[$processedCount]['birthdate_timestamp'] = $messagePayload['birthdate'];
+      }
+      if (isset($messagePayload['mobile'])) {
+        $newSubscribers[$processedCount]['mobile'] = $messagePayload['mobile'];
+      }
+
+      $messageCount--;
+      $processedCount++;
+    }
+
+    list($composedSubscriberList, $mbDeliveryTags) = $this->composeSubscriberSubmission($newSubscribers);
+    if (count($composedSubscriberList) > 0) {
+      $results = $this->submitToMailChimp($composedSubscriberList, $mbDeliveryTags);
+      $this->statHat->clearAddedStatNames();
+      $this->statHat->addStatName('consumeNewRegistrationsQueue');
+      $this->statHat->reportCount($processedCount);
+    }
+    else {
+      $results = 'No new accounts to submit to MailChimp.';
+    }
+
+    return $results;
+
+    
+    
 
 
     echo '------- mbc-mailchimp-subscription->consumeQueue() END: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
