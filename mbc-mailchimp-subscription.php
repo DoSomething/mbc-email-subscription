@@ -13,7 +13,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 // symlinks in the project directory point to the actual location of the files
 require_once __DIR__ . '/mb-secure-config.inc';
 
-require_once __DIR__ . '/MBC_Mailchimp.class.inc';
+require_once __DIR__ . '/MBC_EMail_Subscription.class.inc';
 require_once __DIR__ . '/messagebroker-config/MB_Configuration.class.inc';
 
 
@@ -56,6 +56,6 @@ echo '------- mbc-mailchimp-subscription START: ' . date('D M j G:i:s T Y') . ' 
 
 // Kick off
 $mb = new MessageBroker($credentials, $config);
-$mb->consumeMessage(array(new MBC_Mailchimp_Toolbox($credentials, $config, $settings), 'consumeQueue'));
+$mb->consumeMessage(array(new MBC_EMail_Subscription($credentials, $config, $settings), 'consumeQueue'));
 
 echo '------- mbc-mailchimp-subscription END: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
