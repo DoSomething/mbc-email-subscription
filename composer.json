@@ -1,10 +1,10 @@
 {
-    "name": "mbc-mailchimp-subscription",
+    "name": "mbc-email-subscription",
     "type": "project",
     "version": "0.1.0",
-    "description": "A consummer app for the Message Broker system that submits email addresses to Mailchimp in batches and assigns them to list and related interest groups.",
+    "description": "A consummer app for the Message Broker system that submits email addresses to an email service. Using the MB_Toolbox -> MB_MailChimp class submit in batches and assign to lists and related interest groups.",
     "keywords": ["message broker"],
-    "homepage": "https://github.com/DoSomething/mbc-mailchimp-subscription",
+    "homepage": "https://github.com/DoSomething/mbc-email-subscription",
     "license" : "MIT",
     "authors": [
     {
