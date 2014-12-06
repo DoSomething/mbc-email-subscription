@@ -26,6 +26,7 @@ $credentials = array(
   'vhost' => getenv("RABBITMQ_VHOST"),
 );
 $settings = array(
+  'mailchimp_apikey' => getenv("MAILCHIMP_APIKEY"),
   'stathat_ez_key' => getenv("STATHAT_EZKEY"),
 );
 
@@ -55,6 +56,6 @@ echo '------- mbc-mailchimp-subscription START: ' . date('D M j G:i:s T Y') . ' 
 
 // Kick off
 $mb = new MessageBroker($credentials, $config);
-$mb->consumeMessage(array(new MBC_Mailchimp($credentials, $settings), 'consumeQueue'));
+$mb->consumeMessage(array(new MBC_Mailchimp_Toolbox($credentials, $config, $settings), 'consumeQueue'));
 
 echo '------- mbc-mailchimp-subscription END: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
