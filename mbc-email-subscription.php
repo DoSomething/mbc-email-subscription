@@ -42,20 +42,29 @@ $config['exchange'] = array(
   'durable' => $topicEmailService->durable,
   'auto_delete' => $topicEmailService->auto_delete,
 );
-$config['queue'][] = array(
+$config['queue'][$topicEmailService->queues->mailchimpSubscriptionQueue->name] = array(
   'name' => $topicEmailService->queues->mailchimpSubscriptionQueue->name,
   'passive' => $topicEmailService->queues->mailchimpSubscriptionQueue->passive,
   'durable' => $topicEmailService->queues->mailchimpSubscriptionQueue->durable,
   'exclusive' => $topicEmailService->queues->mailchimpSubscriptionQueue->exclusive,
   'auto_delete' => $topicEmailService->queues->mailchimpSubscriptionQueue->auto_delete,
-  'bindingKey' => $topicEmailService->queues->mailchimpSubscriptionQueue->binding_key,
+  'bindingKey' => $topicEmailService->queues->mailchimpSubscriptionQueue->binding_pattern,
 );
+
+
+$bla = FALSE;
+if ($bla) {
+  $bla = TRUE;
+}
 
 
 echo '------- mbc-mailchimp-subscription START: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
 
 // Kick off
-$mb = new MessageBroker($credentials, $config);
-$mb->consumeMessage(array(new MBC_EMail_Subscription($credentials, $config, $settings), 'consumeQueue'));
+$status = '';
+$mbcEMailSubscription = new MBC_EMail_Subscription($credentials, $config, $settings);
+$status = $mbcEMailSubscription->consumeQueue();
+
+print $status;
 
 echo '------- mbc-mailchimp-subscription END: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;

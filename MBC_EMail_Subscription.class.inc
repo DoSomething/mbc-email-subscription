@@ -1,6 +1,6 @@
 <?php
-
 use DoSomething\MBStatTracker\StatHat;
+use DoSomething\MB_Toolbox\MB_MailChimp;
 
 /**
  * MBC_EMail_Subscription class - collect entries in the ?? queue to subscribe email addresses to an email service.
@@ -30,6 +30,20 @@ class MBC_EMail_Subscription
   private $channel;
 
   /**
+   * Message Broker object that details the connection to RabbitMQ.
+   *
+   * @var object
+   */
+  private $messageBroker;
+
+  /**
+   * Setting from external services - MailChimp.
+   *
+   * @var object
+   */
+  private $mailChimp;
+
+  /**
    * Setting from external services - StatHat.
    *
    * @var object
@@ -37,13 +51,6 @@ class MBC_EMail_Subscription
   private $statHat;
 
   /**
-   * Message Broker object that details the connection to RabbitMQ.
-   *
-   * @var object
-   */
-  private $messageBroker;
-
-    /**
    * The number of queue entries to process in each session
    */
   const BATCH_SIZE = 100;
@@ -71,6 +78,8 @@ class MBC_EMail_Subscription
     $connection = $this->messageBroker->connection;
     $this->channel = $connection->channel();
 
+    $this->mailChimp = new MB_MailChimp($settings);
+
     $this->statHat = new StatHat($settings['stathat_ez_key'], 'mbc-mailchimp-toolbox:');
     $this->statHat->setIsProduction(FALSE);
   }
@@ -81,7 +90,7 @@ class MBC_EMail_Subscription
    * @param string $payload
    *   The contents of the message in a serial format
    */
-  public function consumeQueue($payload) {
+  public function consumeQueue() {
     echo '------- mbc-mailchimp-subscription->consumeQueue() START: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
 
 $bla = FALSE;
@@ -89,25 +98,33 @@ if ($bla) {
   $bla = TRUE;
 }
 
-   // Get the status details of the queue by requesting a declare
-    list($this->channel, $status) = $this->messageBroker->setupQueue($this->config->topicEmailService->queues->mailchimpSubscriptionQueue->name, $this->channel);
 
-    $messageCount = $status[1];
-    $unackedCount = $status[2];
+   // Get the status details of the queue by requesting a declare
+    list($this->channel, $status) = $this->messageBroker->setupQueue($this->config['queue']['mailchimpSubscriptionQueue']['name'], $this->channel);
 
     $messageDetails = '';
     $newSubscribers = array();
     $processedCount = 0;
 
+    $messageCount = $status[1];
+    $unackedCount = $status[2];
+
     while ($messageCount > 0 && $processedCount < self::BATCH_SIZE) {
-      $messageDetails = $this->channel->basic_get($this->config->topicEmailService->queues->mailchimpSubscriptionQueue->name);
+      $messageDetails = $this->channel->basic_get($this->config['queue']['mailchimpSubscriptionQueue']['name']);
       $messagePayload = unserialize($messageDetails->body);
       $newSubscribers[$processedCount] = array(
         'email' => $messagePayload['email'],
         'mb_delivery_tag' => $messageDetails->delivery_info['delivery_tag'],
       );
+
+      if (isset($messagePayload['activity_timestamp'])) {
+        $newSubscribers[$processedCount]['activity_timestamp'] = $messagePayload['activity_timestamp'];
+      }
       if (isset($messagePayload['merge_vars']['FNAME'])) {
         $newSubscribers[$processedCount]['fname'] = $messagePayload['merge_vars']['FNAME'];
+      }
+      elseif (isset($messagePayload['first_name'])) {
+        $newSubscribers[$processedCount]['fname'] = $messagePayload['first_name'];
       }
       if (isset($messagePayload['uid'])) {
         $newSubscribers[$processedCount]['uid'] = $messagePayload['uid'];
@@ -116,10 +133,29 @@ if ($bla) {
         $newSubscribers[$processedCount]['birthdate_timestamp'] = $messagePayload['birthdate_timestamp'];
       }
       elseif (isset($messagePayload['birthdate'])) {
-        $newSubscribers[$processedCount]['birthdate_timestamp'] = $messagePayload['birthdate'];
+        $newSubscribers[$processedCount]['birthdate'] = $messagePayload['birthdate'];
       }
       if (isset($messagePayload['mobile'])) {
         $newSubscribers[$processedCount]['mobile'] = $messagePayload['mobile'];
+      }
+      if (isset($messagePayload['activity'])) {
+        $newSubscribers[$processedCount]['activity'] = $messagePayload['activity'];
+      }
+      if (isset($messagePayload['country_code'])) {
+        $newSubscribers[$processedCount]['country_code'] = $messagePayload['country_code'];
+      }
+
+      // CGG2014 specific
+      if (isset($messagePayload['candidate_name'])) {
+        $newSubscribers[$processedCount]['cgg2014_vote_candidate_name'] = $messagePayload['candidate_name'];
+      }
+
+      // MailChimp settings
+      if (isset($messagePayload['mailchimp_grouping_id'])) {
+        $newSubscribers[$processedCount]['mailchimp_grouping_id'] = $messagePayload['mailchimp_grouping_id'];
+      }
+      if (isset($messagePayload['mailchimp_group_name'])) {
+        $newSubscribers[$processedCount]['mailchimp_group_name'] = $messagePayload['mailchimp_group_name'];
       }
 
       $messageCount--;
@@ -128,7 +164,8 @@ if ($bla) {
 
     list($composedSubscriberList, $mbDeliveryTags) = $this->composeSubscriberSubmission($newSubscribers);
     if (count($composedSubscriberList) > 0) {
-      $results = $this->submitToMailChimp($composedSubscriberList, $mbDeliveryTags);
+      $results = $this->mailChimp->submitBatchToMailChimp($composedSubscriberList, $mbDeliveryTags);
+
       $this->statHat->clearAddedStatNames();
       $this->statHat->addStatName('consumeNewRegistrationsQueue');
       $this->statHat->reportCount($processedCount);
@@ -140,5 +177,74 @@ if ($bla) {
     echo '------- mbc-mailchimp-subscription->consumeQueue() END: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
   }
   
+    /**
+   * Format email list to meet MailChimp API requirements for batchSubscribe
+   *
+   * @param array $newSubscribers
+   *   The list of email address to be formatted
+   *
+   * @return array
+   *   Array of email addresses formatted to meet MailChimp API requirements.
+   */
+  private function composeSubscriberSubmission($newSubscribers = array()) {
+
+    $composedSubscriberList = array();
+    $mbDeliveryTags = array();
+
+    $composedSubscriberList = array();
+    foreach ($newSubscribers as $newSubscriber) {
+
+      // Consolidate varable names
+      // @todo: Convert all producers to use first_name and last_name
+      if (isset($newSubscriber['fname'])) {
+        $newSubscriber['FNAME'] = $newSubscriber['fname'];
+      }
+      elseif (isset($newSubscriber['first_name'])) {
+        $newSubscriber['FNAME'] = $newSubscriber['first_name'];
+      }
+      if (isset($newSubscriber['lname'])) {
+        $newSubscriber['LNAME'] = $newSubscriber['lname'];
+      }
+      elseif (isset($newSubscriber['last_name'])) {
+        $newSubscriber['LNAME'] = $newSubscriber['last_name'];
+      }
+
+      // Remove invalid values
+      if (isset($newSubscriber['birthdate_timestamp']) && !is_int($newSubscriber['birthdate_timestamp']) ||
+          $newSubscriber['birthdate_timestamp'] > (time() - (60 * 60 * 24 * 365 * 1))) {
+        unset($newSubscriber['birthdate_timestamp']);
+      }
+      if (isset($newSubscriber['mobile']) && !strlen($newSubscriber['mobile']) < 8) {
+        unset($newSubscriber['mobile']);
+      }
+
+
+      // Dont add address of users under 13
+      if (!isset($newSubscriber['birthdate_timestamp']) ||
+          (isset($newSubscriber['birthdate_timestamp']) &&
+          ($newSubscriber['birthdate_timestamp'] < time() - (60 * 60 * 24 * 365 * 13)))) {
+        $composedSubscriberList[] = array(
+          'email' => array(
+            'email' => $newSubscriber['email']
+          ),
+          'merge_vars' => array(
+              'UID' => isset($newSubscriber['uid']) ? $newSubscriber['uid'] : '',
+              'FNAME' => isset($newSubscriber['FNAME']) ? $newSubscriber['FNAME'] : '',
+              'LNAME' => isset($newSubscriber['LNAME']) ? $newSubscriber['LNAME'] : '',
+              'BDAY' => isset($newSubscriber['birthdate_timestamp']) ? date('m/d', $newSubscriber['birthdate_timestamp']) : '',
+              'BDAYFULL' => isset($newSubscriber['birthdate_timestamp']) ? date('m/d/Y', $newSubscriber['birthdate_timestamp']) : '',
+              'MOBILE' => isset($newSubscriber['mobile']) ? $newSubscriber['mobile'] : '',
+          ),
+        );
+        $mbDeliveryTags[$newSubscriber['email']] = $newSubscriber['mb_delivery_tag'];
+      }
+      else {
+        // @todo: Add StatHat collection point to track number of under 13 users skipped
+        $this->channel->basic_ack($newSubscriber['mb_delivery_tag']);
+      }
+    }
+
+    return array($composedSubscriberList, $mbDeliveryTags);
+  }
 
 }
