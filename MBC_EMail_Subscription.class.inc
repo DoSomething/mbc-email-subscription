@@ -43,7 +43,7 @@ class MBC_EMail_Subscription
    * @var object
    */
   private $toolbox;
-q
+
   /**
    * Setting from external services - MailChimp.
    *
