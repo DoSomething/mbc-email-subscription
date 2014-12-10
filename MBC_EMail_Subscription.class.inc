@@ -296,7 +296,7 @@ class MBC_EMail_Subscription
         $this->statHat->reportCount(1);
       }
       else {
-        echo 'ERROR - ackBackSubscribers: No delivery tag for: ' . $subscriptionResultAdds['email'], PHP_EOL;
+        echo 'ERROR - ackBackSubscribers Add: No delivery tag for: ' . $subscriptionResultAdds['email'], PHP_EOL;
         $this->statHat->clearAddedStatNames();
         $this->statHat->addStatName('ackBackSubscribers - Add ERROR');
         $this->statHat->reportCount(1);
@@ -305,9 +305,18 @@ class MBC_EMail_Subscription
 
     $this->statHat->clearAddedStatNames();
     $this->statHat->addStatName('ackBackSubscribers - Update');
-    foreach ($subscriptionResults['updates'] as $subscriptionResult) {
-      $this->channel->basic_ack($mbDeliveryTags[$subscriptionResult['email']]);
-      $this->statHat->reportCount(1);
+    foreach ($subscriptionResults['updates'] as $subscriptionResultUpdates) {
+      if (isset($mbDeliveryTags[$subscriptionResultUpdates['email']])) {
+        $this->channel->basic_ack($mbDeliveryTags[$subscriptionResultUpdates['email']]);
+        $this->statHat->reportCount(1);
+      }
+      else {
+        echo 'ERROR - ackBackSubscribers Update: No delivery tag for: ' . $subscriptionResultUpdates['email'], PHP_EOL;
+        $this->statHat->clearAddedStatNames();
+        $this->statHat->addStatName('ackBackSubscribers - Update ERROR');
+        $this->statHat->reportCount(1);
+      }
+
     }
 
     $this->statHat->clearAddedStatNames();
