@@ -27,6 +27,7 @@ $credentials = array(
 );
 $settings = array(
   'mailchimp_apikey' => getenv("MAILCHIMP_APIKEY"),
+  'mailchimp_int_list_id' => getenv("MAILCHIMP_INTERNATIONAL_LIST_ID"),
   'stathat_ez_key' => getenv("STATHAT_EZKEY"),
 );
 
@@ -50,12 +51,6 @@ $config['queue'][$topicEmailService->queues->mailchimpSubscriptionQueue->name] =
   'auto_delete' => $topicEmailService->queues->mailchimpSubscriptionQueue->auto_delete,
   'bindingKey' => $topicEmailService->queues->mailchimpSubscriptionQueue->binding_pattern,
 );
-
-
-$bla = FALSE;
-if ($bla) {
-  $bla = TRUE;
-}
 
 
 echo '------- mbc-mailchimp-subscription START: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;

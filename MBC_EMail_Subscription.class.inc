@@ -1,5 +1,6 @@
 <?php
 use DoSomething\MBStatTracker\StatHat;
+use DoSomething\MB_Toolbox\MB_Toolbox;
 use DoSomething\MB_Toolbox\MB_MailChimp;
 
 /**
@@ -36,6 +37,13 @@ class MBC_EMail_Subscription
    */
   private $messageBroker;
 
+  /**
+   * Setting from external services - Message Broker Toolbox.
+   *
+   * @var object
+   */
+  private $toolbox;
+q
   /**
    * Setting from external services - MailChimp.
    *
@@ -78,6 +86,7 @@ class MBC_EMail_Subscription
     $connection = $this->messageBroker->connection;
     $this->channel = $connection->channel();
 
+    $this->toolbox = new MB_Toolbox($settings);
     $this->mailChimp = new MB_MailChimp($settings);
 
     $this->statHat = new StatHat($settings['stathat_ez_key'], 'mbc-mailchimp-toolbox:');
@@ -93,13 +102,7 @@ class MBC_EMail_Subscription
   public function consumeQueue() {
     echo '------- mbc-mailchimp-subscription->consumeQueue() START: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
 
-$bla = FALSE;
-if ($bla) {
-  $bla = TRUE;
-}
-
-
-   // Get the status details of the queue by requesting a declare
+    // Get the status details of the queue by requesting a declare
     list($this->channel, $status) = $this->messageBroker->setupQueue($this->config['queue']['mailchimpSubscriptionQueue']['name'], $this->channel);
 
     $messageDetails = '';
@@ -164,20 +167,21 @@ if ($bla) {
 
     list($composedSubscriberList, $mbDeliveryTags) = $this->composeSubscriberSubmission($newSubscribers);
     if (count($composedSubscriberList) > 0) {
-      $results = $this->mailChimp->submitBatchToMailChimp($composedSubscriberList, $mbDeliveryTags);
+      $subscriptionResults = $this->mailChimp->submitBatchToMailChimp($composedSubscriberList);
+      $this->ackBackSubscribers($subscriptionResults, $mbDeliveryTags);
 
       $this->statHat->clearAddedStatNames();
-      $this->statHat->addStatName('consumeNewRegistrationsQueue');
+      $this->statHat->addStatName('consumeQueue');
       $this->statHat->reportCount($processedCount);
     }
     else {
-      $results = 'No new accounts to submit to MailChimp.';
+      echo 'consumeQueue() - No new accounts to submit to MailChimp.', PHP_EOL;
     }
 
     echo '------- mbc-mailchimp-subscription->consumeQueue() END: ' . date('D M j G:i:s T Y') . ' -------', PHP_EOL;
   }
-  
-    /**
+
+  /**
    * Format email list to meet MailChimp API requirements for batchSubscribe
    *
    * @param array $newSubscribers
@@ -218,33 +222,92 @@ if ($bla) {
         unset($newSubscriber['mobile']);
       }
 
-
       // Dont add address of users under 13
       if (!isset($newSubscriber['birthdate_timestamp']) ||
           (isset($newSubscriber['birthdate_timestamp']) &&
           ($newSubscriber['birthdate_timestamp'] < time() - (60 * 60 * 24 * 365 * 13)))) {
+
+        if (isset($newSubscriber['country_code'])) {
+          $countryCode = $newSubscriber['country_code'];
+          if ($this->toolbox->isDSAffiliate($newSubscriber['country_code'])) {
+            $groupings = array(
+              array(
+                'id' => 10669,
+                'groups' => array($countryCode)
+              ),
+            );
+          }
+          else {
+            $groupings = array(
+              array(
+                'id' => 10673,
+                'groups' => array('Non-affiliates')
+              ),
+            );
+          }
+        }
+
         $composedSubscriberList[] = array(
           'email' => array(
             'email' => $newSubscriber['email']
           ),
           'merge_vars' => array(
-              'UID' => isset($newSubscriber['uid']) ? $newSubscriber['uid'] : '',
-              'FNAME' => isset($newSubscriber['FNAME']) ? $newSubscriber['FNAME'] : '',
-              'LNAME' => isset($newSubscriber['LNAME']) ? $newSubscriber['LNAME'] : '',
-              'BDAY' => isset($newSubscriber['birthdate_timestamp']) ? date('m/d', $newSubscriber['birthdate_timestamp']) : '',
-              'BDAYFULL' => isset($newSubscriber['birthdate_timestamp']) ? date('m/d/Y', $newSubscriber['birthdate_timestamp']) : '',
-              'MOBILE' => isset($newSubscriber['mobile']) ? $newSubscriber['mobile'] : '',
+            'UID' => isset($newSubscriber['uid']) ? $newSubscriber['uid'] : '',
+            'FNAME' => isset($newSubscriber['FNAME']) ? $newSubscriber['FNAME'] : '',
+            'LNAME' => isset($newSubscriber['LNAME']) ? $newSubscriber['LNAME'] : '',
+            'BDAY' => isset($newSubscriber['birthdate_timestamp']) ? date('m/d', $newSubscriber['birthdate_timestamp']) : '',
+            'BDAYFULL' => isset($newSubscriber['birthdate_timestamp']) ? date('m/d/Y', $newSubscriber['birthdate_timestamp']) : '',
+            'MOBILE' => isset($newSubscriber['mobile']) ? $newSubscriber['mobile'] : '',
+            'C_CODE' => isset($newSubscriber['country_code']) ? $newSubscriber['country_code'] : '',
+            'SOURCE' => isset($newSubscriber['activity']) ? $newSubscriber['activity'] : '',
+            'groupings' => $groupings
           ),
         );
         $mbDeliveryTags[$newSubscriber['email']] = $newSubscriber['mb_delivery_tag'];
       }
       else {
-        // @todo: Add StatHat collection point to track number of under 13 users skipped
         $this->channel->basic_ack($newSubscriber['mb_delivery_tag']);
+
+        $this->statHat->clearAddedStatNames();
+        $this->statHat->addStatName('Under 13 - skipped');
+        $this->statHat->reportCount(1);
       }
     }
 
     return array($composedSubscriberList, $mbDeliveryTags);
+  }
+
+  /**
+   * Acknowledge user signup to MailChimp as batch. Remove entry from queue.
+   *
+   * @param array $subscriptionResults
+   *   The list of email address to be formatted
+   *
+   * @return array
+   *   Batch submission results from subscription submission to MailChimp.
+   */
+  private function ackBackSubscribers($subscriptionResults, $mbDeliveryTags) {
+
+    $this->statHat->clearAddedStatNames();
+    $this->statHat->addStatName('ackBackSubscribers - Add');
+    foreach ($subscriptionResults['adds'] as $subscriptionResultAdds) {
+      $this->channel->basic_ack($mbDeliveryTags[$subscriptionResultAdds['email']]);
+      $this->statHat->reportCount(1);
+    }
+
+    $this->statHat->clearAddedStatNames();
+    $this->statHat->addStatName('ackBackSubscribers - Update');
+    foreach ($subscriptionResults['updates'] as $subscriptionResult) {
+      $this->channel->basic_ack($mbDeliveryTags[$subscriptionResult['email']]);
+      $this->statHat->reportCount(1);
+    }
+
+    $this->statHat->clearAddedStatNames();
+    $this->statHat->addStatName('ackBackSubscribers - Errors');
+    if (count($subscriptionResults['errors']) > 0) {
+      $this->statHat->reportCount(1);
+    }
+
   }
 
 }
