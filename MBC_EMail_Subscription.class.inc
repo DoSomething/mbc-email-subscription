@@ -265,7 +265,7 @@ class MBC_EMail_Subscription
         );
         // CGG2014
         if (isset($newSubscriber['candidate_name'])) {
-          $composedSubscriberList[$newSubscriberCount]['merge_vars']['CGG14_VOTE'] = $newSubscriber['candidate_name'];
+          $composedSubscriberList[$newSubscriberCount]['merge_vars']['CGG14_VOTE'] = $newSubscriber['cgg2014_vote_candidate_name'];
         }
       }
       else {
