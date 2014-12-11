@@ -196,7 +196,7 @@ class MBC_EMail_Subscription
     $mbDeliveryTags = array();
 
     $composedSubscriberList = array();
-    foreach ($newSubscribers as $newSubscriber) {
+    foreach ($newSubscribers as $newSubscriberCount => $newSubscriber) {
 
       // Consolidate varable names
       // @todo: Convert all producers to use first_name and last_name
@@ -247,7 +247,7 @@ class MBC_EMail_Subscription
           }
         }
 
-        $composedSubscriberList[] = array(
+        $composedSubscriberList[$newSubscriberCount] = array(
           'email' => array(
             'email' => $newSubscriber['email']
           ),
@@ -263,7 +263,10 @@ class MBC_EMail_Subscription
             'groupings' => $groupings
           ),
         );
-        $mbDeliveryTags[$newSubscriber['email']] = $newSubscriber['mb_delivery_tag'];
+        // CGG2014
+        if (isset($newSubscriber['candidate_name'])) {
+          $composedSubscriberList[$newSubscriberCount]['merge_vars']['CGG14_VOTE'] = $newSubscriber['candidate_name'];
+        }
       }
       else {
         $this->channel->basic_ack($newSubscriber['mb_delivery_tag']);
