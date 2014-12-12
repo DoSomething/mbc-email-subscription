@@ -271,6 +271,7 @@ class MBC_EMail_Subscription
         // Index of email and related message ID for ack_back
         $newSubscriber['email'] = strtolower($newSubscriber['email']);
         $mbDeliveryTags[$newSubscriber['email']] = $newSubscriber['mb_delivery_tag'];
+
       }
       else {
         $this->channel->basic_ack($newSubscriber['mb_delivery_tag']);
@@ -300,8 +301,9 @@ class MBC_EMail_Subscription
     $this->statHat->clearAddedStatNames();
     $this->statHat->addStatName('ackBackSubscribers - Add');
     foreach ($subscriptionResults['adds'] as $subscriptionResultAdds) {
-      if (isset($mbDeliveryTags[$subscriptionResultAdds['email']])) {
-        $this->channel->basic_ack($mbDeliveryTags[$subscriptionResultAdds['email']]);
+      $email = strtolower($subscriptionResultAdds['email']);
+      if (isset($mbDeliveryTags[$email])) {
+        $this->channel->basic_ack($mbDeliveryTags[$email]);
         $this->statHat->reportCount(1);
       }
       else {
@@ -315,8 +317,9 @@ class MBC_EMail_Subscription
     $this->statHat->clearAddedStatNames();
     $this->statHat->addStatName('ackBackSubscribers - Update');
     foreach ($subscriptionResults['updates'] as $subscriptionResultUpdates) {
-      if (isset($mbDeliveryTags[$subscriptionResultUpdates['email']])) {
-        $this->channel->basic_ack($mbDeliveryTags[$subscriptionResultUpdates['email']]);
+      $email = strtolower($subscriptionResultUpdates['email']);
+      if (isset($mbDeliveryTags[$email])) {
+        $this->channel->basic_ack($mbDeliveryTags[$email]);
         $this->statHat->reportCount(1);
       }
       else {
