@@ -267,6 +267,9 @@ class MBC_EMail_Subscription
         if (isset($newSubscriber['cgg2014_vote_candidate_name'])) {
           $composedSubscriberList[$newSubscriberCount]['merge_vars']['CGG14_VOTE'] = $newSubscriber['cgg2014_vote_candidate_name'];
         }
+        
+        // Index of email and related message ID for ack_back
+        $mbDeliveryTags[$newSubscriber['email']] = $newSubscriber['mb_delivery_tag'];
       }
       else {
         $this->channel->basic_ack($newSubscriber['mb_delivery_tag']);
@@ -290,6 +293,8 @@ class MBC_EMail_Subscription
    *   Batch submission results from subscription submission to MailChimp.
    */
   private function ackBackSubscribers($subscriptionResults, $mbDeliveryTags) {
+    
+    
 
     $this->statHat->clearAddedStatNames();
     $this->statHat->addStatName('ackBackSubscribers - Add');
