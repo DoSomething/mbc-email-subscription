@@ -269,6 +269,7 @@ class MBC_EMail_Subscription
         }
         
         // Index of email and related message ID for ack_back
+        $newSubscriber['email'] = strtolower($newSubscriber['email']);
         $mbDeliveryTags[$newSubscriber['email']] = $newSubscriber['mb_delivery_tag'];
       }
       else {
@@ -330,6 +331,14 @@ class MBC_EMail_Subscription
     $this->statHat->clearAddedStatNames();
     $this->statHat->addStatName('ackBackSubscribers - Errors');
     if (count($subscriptionResults['errors']) > 0) {
+      $this->statHat->reportCount(count($subscriptionResults['errors']));
+    }
+    foreach ($subscriptionResults['errors'] as $subscriptionResultErrors) {
+      $email = strtolower($subscriptionResultErrors['email']['email']);
+      $this->channel->basic_ack($mbDeliveryTags[$email]);
+
+      $this->statHat->clearAddedStatNames();
+      $this->statHat->addStatName('ackBackSubscribers - Errors - ' . $subscriptionResultErrors['code'] . ': ' . $subscriptionResultErrors['error']);
       $this->statHat->reportCount(1);
     }
 
